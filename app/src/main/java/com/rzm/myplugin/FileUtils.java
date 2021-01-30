@@ -1,4 +1,4 @@
-package com.enjoy.leo_plugin;
+package com.rzm.myplugin;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -8,7 +8,7 @@ import java.io.InputStream;
 
 public class FileUtils {
 
-    private static boolean copyFile(File srcFile, File destFile) {
+    public static boolean copyFile(File srcFile, File destFile) {
         FileInputStream is = null;
         FileOutputStream os = null;
         try {
@@ -27,7 +27,7 @@ public class FileUtils {
         }
         return false;
     }
-    private static boolean copyFile(InputStream is, File destFile) {
+    public static boolean copyFile(InputStream is, File destFile) {
         FileOutputStream os = null;
         try {
             byte buf[] = new byte[8 * 1024];
