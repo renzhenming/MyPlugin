@@ -34,6 +34,7 @@ public class MainActivity extends AppCompatActivity {
 
     public void jump(View view) {
         PluginManager.hookAms();
+        PluginManager.hookHandler();
         Intent intent = new Intent();
         intent.setComponent(new ComponentName("com.rzm.myplugin.plugin","com.rzm.plugin.TestActivity"));
         startActivity(intent);
