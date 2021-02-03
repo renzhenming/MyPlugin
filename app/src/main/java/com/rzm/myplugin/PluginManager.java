@@ -3,6 +3,7 @@ package com.rzm.myplugin;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
 
@@ -61,160 +62,103 @@ public class PluginManager {
     public static void hookAms() {
         try {
             //获取singleTon对象
-            Class<?> activityManagerClass = Class.forName("android.app.ActivityManager");
-            Field iActivityManagerSingletonField = activityManagerClass.getDeclaredField("IActivityManagerSingleton");
-            iActivityManagerSingletonField.setAccessible(true);
-            Object singletonObj = iActivityManagerSingletonField.get(null);
+            Field singletonField;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                Class<?> clazz = Class.forName("android.app.ActivityManagerNative");
+                singletonField = clazz.getDeclaredField("gDefault");
+            } else {
+                Class<?> activityManagerClass = Class.forName("android.app.ActivityManager");
+                singletonField = activityManagerClass.getDeclaredField("IActivityManagerSingleton");
+            }
+            singletonField.setAccessible(true);
+            Object singletonObj = singletonField.get(null);
 
             //获取系统的ActivityManager对象
             Class<?> singleTonClass = Class.forName("android.util.Singleton");
-            Field singleTonField = singleTonClass.getDeclaredField("mInstance");
-            singleTonField.setAccessible(true);
-            Object mInstance = singleTonField.get(singletonObj);
+            Field activityManagerField = singleTonClass.getDeclaredField("mInstance");
+            activityManagerField.setAccessible(true);
+            Object activityManagerObj = activityManagerField.get(singletonObj);
 
             Class<?> iActivityManagerClass = Class.forName("android.app.IActivityManager");
-            Object proxyInstance = Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(), new Class[]{iActivityManagerClass}, new InvocationHandler() {
-                @Override
-                public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                    if ("startActivity".equals(method.getName())) {
-                        System.out.println("PluginManager invoke method = " + method);
-                        int index = -1;
-                        for (int i = 0; i < args.length; i++) {
-                            if (args[i] instanceof Intent) {
-                                index = i;
-                            }
-                        }
-                        if (index != -1) {
-                            Intent finalIntent = (Intent) args[index];
-                            Intent proxyIntent = new Intent();
-                            proxyIntent.setClassName("com.rzm.myplugin",
-                                    "com.rzm.myplugin.ProxyActivity");
-                            proxyIntent.putExtra(FINAL_INTENT, finalIntent);
-                            args[index] = proxyIntent;
+            Object activityManagerProxyObj = Proxy.newProxyInstance(ClassLoader.getSystemClassLoader(), new Class[]{iActivityManagerClass}, (proxy, method, args) -> {
+                if ("startActivity".equals(method.getName())) {
+                    System.out.println("PluginManager invoke method = " + method);
+                    int index = -1;
+                    for (int i = 0; i < args.length; i++) {
+                        if (args[i] instanceof Intent) {
+                            index = i;
                         }
                     }
-                    return method.invoke(mInstance, args);
+                    if (index != -1) {
+                        Intent finalIntent = (Intent) args[index];
+                        Intent proxyIntent = new Intent();
+                        proxyIntent.setClassName("com.rzm.myplugin",
+                                "com.rzm.myplugin.ProxyActivity");
+                        proxyIntent.putExtra(FINAL_INTENT, finalIntent);
+                        args[index] = proxyIntent;
+                    }
                 }
+                return method.invoke(activityManagerObj, args);
             });
             //代理对象设置给系统
-            singleTonField.set(singletonObj, proxyInstance);
+            activityManagerField.set(singletonObj, activityManagerProxyObj);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
+
     public static void hookHandler() {
         try {
-            // 获取 ActivityThread 类的 Class 对象
-            Class<?> clazz = Class.forName("android.app.ActivityThread");
-
-            // 获取 ActivityThread 对象
-            Field activityThreadField = clazz.getDeclaredField("sCurrentActivityThread");
-            activityThreadField.setAccessible(true);
-            Object activityThread = activityThreadField.get(null);
-
-            // 获取 mH 对象
-            Field mHField = clazz.getDeclaredField("mH");
-            mHField.setAccessible(true);
-            final Handler mH = (Handler) mHField.get(activityThread);
-
-            Field mCallbackField = Handler.class.getDeclaredField("mCallback");
-            mCallbackField.setAccessible(true);
-
-            // 创建的 callback
-            Handler.Callback callback = new Handler.Callback() {
-
-                @Override
-                public boolean handleMessage(@NonNull Message msg) {
-                    // 通过msg  可以拿到 Intent，可以换回执行插件的Intent
-                    System.out.println("PluginManager handleMessage msg.what = "+msg.what);
-                    // 找到 Intent的方便替换的地方  --- 在这个类里面 ActivityClientRecord --- Intent intent 非静态
-                    // msg.obj == ActivityClientRecord
-                    switch (msg.what) {
-                        case 100:
-                            try {
-                                Field intentField = msg.obj.getClass().getDeclaredField("intent");
-                                intentField.setAccessible(true);
-                                // 启动代理Intent
-                                Intent proxyIntent = (Intent) intentField.get(msg.obj);
-                                // 启动插件的 Intent
-                                Intent intent = proxyIntent.getParcelableExtra(FINAL_INTENT);
-                                if (intent != null) {
-                                    intentField.set(msg.obj, intent);
-                                }
-                            } catch (Exception e) {
-                                e.printStackTrace();
+            Handler.Callback callback = msg -> {
+                switch (msg.what) {
+                    case 100:
+                        try {
+                            Field intentField = msg.obj.getClass().getDeclaredField("intent");
+                            intentField.setAccessible(true);
+                            // 启动代理Intent
+                            Intent proxyIntent = (Intent) intentField.get(msg.obj);
+                            // 启动插件的 Intent
+                            Intent intent = proxyIntent.getParcelableExtra(FINAL_INTENT);
+                            if (intent != null) {
+                                intentField.set(msg.obj, intent);
                             }
-                            break;
-                        case 159:
-                            try {
-                                // 获取 mActivityCallbacks 对象
-                                Field mActivityCallbacksField = msg.obj.getClass()
-                                        .getDeclaredField("mActivityCallbacks");
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        break;
+                    case 159:
+                        try {
+                            // 获取 mActivityCallbacks 对象
+                            Field mActivityCallbacksField = msg.obj.getClass()
+                                    .getDeclaredField("mActivityCallbacks");
+                            mActivityCallbacksField.setAccessible(true);
+                            List mActivityCallbacks = (List) mActivityCallbacksField.get(msg.obj);
 
-                                mActivityCallbacksField.setAccessible(true);
-                                List mActivityCallbacks = (List) mActivityCallbacksField.get(msg.obj);
+                            for (int i = 0; i < mActivityCallbacks.size(); i++) {
+                                if (mActivityCallbacks.get(i).getClass().getName()
+                                        .equals("android.app.servertransaction.LaunchActivityItem")) {
+                                    Object launchActivityItem = mActivityCallbacks.get(i);
 
-                                for (int i = 0; i < mActivityCallbacks.size(); i++) {
-                                    if (mActivityCallbacks.get(i).getClass().getName()
-                                            .equals("android.app.servertransaction.LaunchActivityItem")) {
-                                        Object launchActivityItem = mActivityCallbacks.get(i);
+                                    // 获取启动代理的 Intent
+                                    Field mIntentField = launchActivityItem.getClass()
+                                            .getDeclaredField("mIntent");
+                                    mIntentField.setAccessible(true);
+                                    Intent proxyIntent = (Intent) mIntentField.get(launchActivityItem);
 
-                                        // 获取启动代理的 Intent
-                                        Field mIntentField = launchActivityItem.getClass()
-                                                .getDeclaredField("mIntent");
-                                        mIntentField.setAccessible(true);
-                                        Intent proxyIntent = (Intent) mIntentField.get(launchActivityItem);
-
-                                        // 目标 intent 替换 proxyIntent
-                                        Intent intent = proxyIntent.getParcelableExtra(FINAL_INTENT);
-                                        if (intent != null) {
-                                            mIntentField.set(launchActivityItem, intent);
-                                        }
+                                    // 目标 intent 替换 proxyIntent
+                                    Intent intent = proxyIntent.getParcelableExtra(FINAL_INTENT);
+                                    if (intent != null) {
+                                        mIntentField.set(launchActivityItem, intent);
                                     }
                                 }
-                            } catch (Exception e) {
-                                e.printStackTrace();
                             }
-                            break;
-                    }
-                    // 必须 return false
-                    return false;
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        break;
                 }
-            };
 
-            // 替换系统的 callBack
-            mCallbackField.set(mH, callback);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static void hookHandler1() {
-        try {
-            Handler.Callback callback = new Handler.Callback() {
-                @Override
-                public boolean handleMessage(@NonNull Message msg) {
-
-                    switch (msg.what) {
-                        case 100:
-                            try {
-                                Field intentField = msg.obj.getClass().getDeclaredField("intent");
-                                intentField.setAccessible(true);
-                                // 启动代理Intent
-                                Intent proxyIntent = (Intent) intentField.get(msg.obj);
-                                // 启动插件的 Intent
-                                Intent intent = proxyIntent.getParcelableExtra(FINAL_INTENT);
-                                if (intent != null) {
-                                    intentField.set(msg.obj, intent);
-                                }
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
-                            break;
-                    }
-
-                    return false;
-                }
+                return false;
             };
             Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
             Field sCurrentActivityThreadField = activityThreadClass.getDeclaredField("sCurrentActivityThread");
