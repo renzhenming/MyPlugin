@@ -4,11 +4,14 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.Manifest;
+import android.content.ComponentName;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
+import android.view.View;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,6 +26,17 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 100);
         }
+    }
+
+    private void onPermissionGet() {
+
+    }
+
+    public void jump(View view) {
+        PluginManager.hookAms();
+        Intent intent = new Intent();
+        intent.setComponent(new ComponentName("com.rzm.myplugin.plugin","com.rzm.plugin.TestActivity"));
+        startActivity(intent);
     }
 
     @Override
@@ -57,7 +71,8 @@ public class MainActivity extends AppCompatActivity {
                     e.printStackTrace();
                 }
             }).start();
-
+            onPermissionGet();
         }
     }
+
 }
